@@ -6,6 +6,8 @@
 
 {% if video.status in ('queued','downloading','processing') %}
 <p class="card">{% if video.status == 'downloading' %}Downloading the video from your link...{% else %}Finding the best moments and cutting Shorts...{% endif %} This page refreshes by itself.</p>
+{% elif video.status == 'awaiting' %}
+<p class="card">Video is ready ({{ '%d:%02d' % (video.duration // 60, video.duration % 60) }} long). Waiting for Claude to pick the best moments - ask Claude to process it, or it will pick them on its next scheduled run.</p>
 {% elif video.status == 'failed' %}
 <p class="card err">Failed: {{ video.error }}</p>
 {% endif %}
@@ -16,7 +18,8 @@
     <strong>Clip {{ loop.index }}</strong>
     <span class="pill {{ c.status }}">{{ c.status }}</span>
   </div>
-  <p class="muted">From {{ '%d:%02d' % (c.start // 60, c.start % 60) }}, {{ c.length|int }}s long, excitement score {{ '%.1f' % c.score }}</p>
+  <p class="muted">From {{ '%d:%02d' % (c.start // 60, c.start % 60) }}, {{ c.length|int }}s long{% if c.score %}, excitement score {{ '%.1f' % c.score }}{% endif %}</p>
+  {% if c.reason %}<p class="muted"><strong>Why Claude picked it:</strong> {{ c.reason }}</p>{% endif %}
   <video controls playsinline preload="metadata" poster="/media/{{ c.id }}/thumb" src="/media/{{ c.id }}/video"></video>
   <label>Title</label>
   <input type="text" name="title" maxlength="100" value="{{ c.title }}">

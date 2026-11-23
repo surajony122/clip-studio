@@ -160,6 +160,37 @@ def cut_short(
         )
 
 
+def audio_profile(src: str, step: int = 5, top: int = 10, clip_len: int = 30) -> Dict[str, object]:
+    """Loudness over time (relative to the video's usual level) plus top candidate windows."""
+    loud = loudness_per_second(src)
+    if len(loud) == 0:
+        return {"has_audio": False, "step_seconds": step, "loudness": [], "candidates": []}
+    baseline = float(np.median(loud)) + 1e-3
+    rel = loud / baseline
+    steps = [round(float(rel[i : i + step].mean()), 2) for i in range(0, len(rel), step)]
+    return {
+        "has_audio": True,
+        "step_seconds": step,
+        "loudness": steps,  # 1.0 = normal; 3+ = much louder than usual
+        "candidates": pick_highlights(loud, clip_len=clip_len, max_clips=top),
+    }
+
+
+def contact_sheet(src: str, dest: str, start: float, end: float, cols: int = 4, rows: int = 4) -> None:
+    """One JPEG with cols*rows evenly spaced frames between start and end (read left-to-right, top-to-bottom)."""
+    n = cols * rows
+    span = max(1.0, end - start)
+    subprocess.run(
+        [
+            ffmpeg_bin(), "-y", "-v", "error",
+            "-ss", f"{start:.2f}", "-t", f"{span:.2f}", "-i", src,
+            "-vf", f"fps={n}/{span:.3f},scale=480:-2,tile={cols}x{rows}",
+            "-frames:v", "1", "-q:v", "4", dest,
+        ],
+        check=True,
+    )
+
+
 def make_clips(
     src: str,
     out_dir: str,

@@ -16,6 +16,9 @@
       <select id="mode" name="mode"><option value="fit">Full screen + blur</option><option value="crop">Center crop</option></select></div>
   </div>
   <p><label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)">
+    <input type="checkbox" name="brain" value="1" checked style="margin-top:5px">
+    <span>Let Claude choose the best moments (it looks at the video). Untick to auto-pick by loudness only.</span></label></p>
+  <p><label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)">
     <input type="checkbox" name="confirm_rights" value="1" required style="margin-top:5px">
     <span>I own this video or have the owner's permission to use it.</span></label></p>
   <p class="muted">Drive/Dropbox links must be shared as "Anyone with the link". YouTube links are tried too, but YouTube often blocks servers - if that happens, share the original file by Drive instead.</p>

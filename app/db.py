@@ -16,7 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued',   -- queued | processing | ready | failed
+    status TEXT NOT NULL DEFAULT 'queued',   -- queued | downloading | processing | awaiting | ready | failed
     error TEXT,
     clip_len INTEGER NOT NULL DEFAULT 30,
     max_clips INTEGER NOT NULL DEFAULT 5,
@@ -47,6 +47,16 @@ def _get() -> sqlite3.Connection:
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA foreign_keys = ON")
         _conn.executescript(SCHEMA)
+        # Add columns that older databases don't have yet.
+        for table, column, ddl in (
+            ("videos", "source_path", "TEXT"),
+            ("videos", "duration", "REAL"),
+            ("videos", "brain", "INTEGER NOT NULL DEFAULT 0"),
+            ("clips", "reason", "TEXT"),
+        ):
+            have = {r[1] for r in _conn.execute(f"PRAGMA table_info({table})")}
+            if column not in have:
+                _conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
         _conn.commit()
     return _conn
 
