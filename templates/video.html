@@ -25,6 +25,7 @@
   <input type="text" name="title" maxlength="100" value="{{ c.title }}">
   <label>Description</label>
   <textarea name="description" maxlength="4500">{{ c.description }}</textarea>
+  <p class="row"><a class="btn ok" href="/download/{{ c.id }}">Download</a></p>
   {% if c.status != 'posted' %}
   <p class="row">
     <button class="ok" name="action" value="approve">Approve</button>

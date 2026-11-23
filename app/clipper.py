@@ -124,6 +124,17 @@ def _video_filter(mode: str) -> List[str]:
             "scale=1080:1920,setsar=1,fps=30"
         )
         return ["-vf", vf]
+    if mode == "stack":
+        # Game zoomed in on top, facecam underneath: fills the whole vertical frame.
+        # Facecam box as fractions of the source frame (x, y, w, h); override with CAM_BOX="x,y,w,h".
+        x, y, w, h = [float(v) for v in os.environ.get("CAM_BOX", "0.7135,0.62,0.28125,0.2963").split(",")]
+        fc = (
+            "[0:v]split=2[g][c];"
+            "[g]crop=ih*1080/1280:ih,scale=1080:1280[game];"
+            f"[c]crop=iw*{w}:ih*{h}:iw*{x}:ih*{y},scale=1080:640[cam];"
+            "[game][cam]vstack,setsar=1,fps=30[v]"
+        )
+        return ["-filter_complex", fc, "-map", "[v]", "-map", "0:a?"]
     # "fit": whole game screen in the middle on a blurred copy of itself
     fc = (
         "[0:v]split=2[a][b];"

@@ -292,7 +292,17 @@ def media(clip_id: int, kind: str, _: None = Depends(require_login)):
     path = clip["path"] if kind == "video" else clip["thumb"]
     if not path or not os.path.exists(path):
         raise HTTPException(404, "File is gone (the server may have restarted).")
-    return FileResponse(path, media_type="video/mp4" if kind == "video" else "image/jpeg")
+    if kind == "video":
+        return FileResponse(path, media_type="video/mp4")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/download/{clip_id}")
+def download_clip(clip_id: int, _: None = Depends(require_login)):
+    clip = db.one("SELECT path, title FROM clips WHERE id = ?", (clip_id,))
+    if not clip or not os.path.exists(clip["path"]):
+        raise HTTPException(404, "File is gone (the server may have restarted).")
+    return FileResponse(clip["path"], media_type="video/mp4", filename=_safe_name(clip["title"]) + ".mp4")
 
 
 # ---------------------------------------------------------------- API for Claude (token protected)
@@ -415,3 +425,59 @@ def api_finish(video_id: int, _: None = Depends(require_token)):
     _api_video(video_id)
     db.execute("UPDATE videos SET status='ready' WHERE id=?", (video_id,))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- clips edited elsewhere (your Mac) -> review here
+def _safe_name(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9 _.-]+", "", text).strip()[:80] or "clip"
+
+
+@app.post("/api/clips/upload")
+async def api_upload_clip(
+    file: UploadFile = File(...),
+    video_title: str = Form(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    reason: str = Form(""),
+    start: float = Form(0),
+    length: float = Form(0),
+    thumb: Optional[UploadFile] = File(None),
+    _: None = Depends(require_token),
+):
+    """Receive a finished Short that was edited on the user's computer so they can approve/download it."""
+    video_title = video_title.strip()[:80] or "Uploaded clips"
+    video = db.one("SELECT * FROM videos WHERE title = ? AND source_path IS NULL ORDER BY id DESC", (video_title,))
+    if video:
+        video_id = video["id"]
+    else:
+        video_id = db.execute(
+            "INSERT INTO videos (title, status, brain) VALUES (?, 'ready', 0)", (video_title,)
+        )
+    out_dir = os.path.join(CLIPS_DIR, str(video_id))
+    os.makedirs(out_dir, exist_ok=True)
+    stem = f"edited_{uuid.uuid4().hex[:8]}"
+    path = os.path.join(out_dir, stem + ".mp4")
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    size = 0
+    with open(path, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > limit:
+                out.close()
+                os.remove(path)
+                raise HTTPException(413, f"Clip is larger than {MAX_UPLOAD_MB} MB.")
+            out.write(chunk)
+    thumb_path = None
+    if thumb is not None and thumb.filename:
+        thumb_path = os.path.join(out_dir, stem + ".jpg")
+        with open(thumb_path, "wb") as out:
+            out.write(await thumb.read())
+    clip_id = db.execute(
+        "INSERT INTO clips (video_id,start,length,score,path,thumb,title,description,reason) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (video_id, start, length, 0.0, path, thumb_path, title.strip()[:100], description[:4500], reason[:1000]),
+    )
+    return {"clip_id": clip_id, "video_id": video_id, "status": "pending"}

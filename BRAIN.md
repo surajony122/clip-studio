@@ -1,29 +1,28 @@
-# BRAIN.md - how Claude operates Clip Studio
+# BRAIN.md - how Claude works with Clip Studio (Mac edits, Render approves)
 
-Claude is the editor's brain. The hosted tool holds the raw video and does the
-ffmpeg work; Claude decides WHICH moments are worth posting and why.
+The Mac does all the heavy lifting (fast). Render only shows finished clips so the
+user can watch, approve/reject and download from any device.
 
-Credentials: `.clipper_env` in this folder (CLIP_URL, CLIP_TOKEN). Never print
-the token or commit it. Send it as `Authorization: Bearer $CLIP_TOKEN`.
-The server sleeps on the free plan: the first call can take ~60 s (use `curl -m 120`).
+Credentials: `.clipper_env` (CLIP_URL, CLIP_TOKEN). Never print or commit them.
+Render free plan: first request after idle takes ~60 s, and files vanish on restart.
 
-## Procedure for each video with status "awaiting"
-1. `GET /api/videos` -> find videos with status `awaiting`.
-2. `GET /api/videos/{id}/profile?clip_len=30` -> loudness every 5 s (1.0 normal,
-   3+ = big reaction) and the loudest candidate windows.
-3. `GET /api/videos/{id}/sheet?start=0&end=DURATION&cols=4&rows=4` -> save the JPEG
-   and look at it. 16 frames, left-to-right, top-to-bottom, evenly spaced.
-   For long videos make several sheets (e.g. 10-minute chunks).
-4. Zoom in around promising spots: same call with a narrow start/end (30-60 s).
-5. Choose 3-6 clips. Good = a clear event (kill, clutch, fail, big reaction, funny
-   moment) with a hook in the first 3 s, ends on the payoff. 20-45 s each (max 59 for
-   Shorts). Don't overlap clips. Don't pick moments just because they are loud.
-6. `POST /api/videos/{id}/clips` JSON: `{"start":..,"length":..,"title":"..","description":"..","reason":".."}`
-   Title <= 100 chars, specific and curiosity-driven. `reason` is shown to the user.
-7. `POST /api/videos/{id}/finish`. The user then approves/rejects in the dashboard.
+## Procedure
+1. Get the long video file (the user's own, or with permission) on this Mac.
+   Use the project venv: `.venv/bin/python`. ffmpeg comes from `imageio_ffmpeg`.
+2. Find the moments: make frame sheets locally
+   (`app.clipper.contact_sheet(src, out.jpg, start, end, cols, rows)`) and look at them;
+   `app.clipper.audio_profile(src)` gives loudness. Zoom in on promising spots (60-80 s sheets).
+   Pick 3-6 non-overlapping clips of 20-59 s with a hook in the first 3 s and a payoff at the end.
+3. Write `clips_out/plan.json`:
+   `[{"file":"1_name","start":722,"length":38,"layout":"stack","title":"...","description":"...","reason":"..."}]`
+   layout: `stack` (game on top + facecam below; set CAM_BOX="x,y,w,h" fractions if the cam is elsewhere),
+   `fit` (whole frame on blur), `crop` (center crop).
+4. Cut: `PYTHONPATH=. .venv/bin/python local_cut.py "<video>" clips_out/plan.json clips_out`
+5. Send to the dashboard: `.venv/bin/python push_clips.py "<video title>" clips_out/plan.json clips_out`
+6. The user reviews at CLIP_URL, approves/rejects, edits titles, and downloads there.
 
 ## Rules
-- Only process videos the user owns or has permission to use (the upload form requires a tick).
-- Claude never posts anything publicly; approval is always the user's.
-- If a call returns 410, the raw file was wiped by a restart: tell the user to re-upload.
-- Report back: which clips, timestamps, and the reason for each.
+- Only process videos the user owns or has permission to use.
+- Claude never posts publicly; approval and posting are the user's.
+- Tell the user if the source is low resolution (soft output) - 1080p originals look far better.
+- Report back: which clips, timestamps, and why each was picked.
