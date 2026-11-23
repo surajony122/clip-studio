@@ -7,3 +7,4 @@ __pycache__/
 .clipper_env
 .env*
 clips_out/
+.DS_Store
