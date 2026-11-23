@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Log in - Clip Studio{% endblock %}
+{% block content %}
+<h1>Log in</h1>
+<form class="card" method="post" action="/login">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <p><button class="primary" type="submit">Log in</button></p>
+</form>
+{% endblock %}

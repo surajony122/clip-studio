@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block head %}{% if video.status in ('queued','processing') %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<p><a href="/">&larr; All videos</a></p>
+<h1>{{ video.title }} <span class="pill {{ video.status }}">{{ video.status }}</span></h1>
+
+{% if video.status in ('queued','processing') %}
+<p class="card">Finding the best moments and cutting Shorts. This page refreshes by itself.</p>
+{% elif video.status == 'failed' %}
+<p class="card err">Failed: {{ video.error }}</p>
+{% endif %}
+
+{% for c in clips %}
+<form class="card" id="clip{{ c.id }}" method="post" action="/clip/{{ c.id }}">
+  <div class="row" style="justify-content:space-between">
+    <strong>Clip {{ loop.index }}</strong>
+    <span class="pill {{ c.status }}">{{ c.status }}</span>
+  </div>
+  <p class="muted">From {{ '%d:%02d' % (c.start // 60, c.start % 60) }}, {{ c.length|int }}s long, excitement score {{ '%.1f' % c.score }}</p>
+  <video controls playsinline preload="metadata" poster="/media/{{ c.id }}/thumb" src="/media/{{ c.id }}/video"></video>
+  <label>Title</label>
+  <input type="text" name="title" maxlength="100" value="{{ c.title }}">
+  <label>Description</label>
+  <textarea name="description" maxlength="4500">{{ c.description }}</textarea>
+  {% if c.status != 'posted' %}
+  <p class="row">
+    <button class="ok" name="action" value="approve">Approve</button>
+    <button name="action" value="reject">Reject</button>
+    <button name="action" value="save">Save text</button>
+    {% if c.status != 'pending' %}<button name="action" value="reset">Back to pending</button>{% endif %}
+  </p>
+  {% endif %}
+</form>
+{% endfor %}
+
+<form method="post" action="/video/{{ video.id }}/delete" onsubmit="return confirm('Delete this video and all its clips?')">
+  <button type="submit">Delete video</button>
+</form>
+{% endblock %}
