@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-from . import clipper, db
+from . import clipper, db, download
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = db.DATA_DIR
@@ -93,16 +93,23 @@ def healthz():
 
 
 # ---------------------------------------------------------------- background worker
-jobs: "queue.Queue[tuple[int, str]]" = queue.Queue()
+jobs: "queue.Queue[tuple[int, str, bool]]" = queue.Queue()
+PLACEHOLDER_TITLE = "Video from link"
 
 
-def _process(video_id: int, src: str) -> None:
+def _process(video_id: int, src: str, is_url: bool = False) -> None:
     video = db.one("SELECT * FROM videos WHERE id = ?", (video_id,))
     if not video:
         return
-    db.execute("UPDATE videos SET status='processing', error=NULL WHERE id=?", (video_id,))
     out_dir = os.path.join(CLIPS_DIR, str(video_id))
     try:
+        if is_url:
+            db.execute("UPDATE videos SET status='downloading', error=NULL WHERE id=?", (video_id,))
+            src, fetched_title = download.fetch_video(src, UPLOAD_DIR, MAX_UPLOAD_MB)
+            if video["title"] == PLACEHOLDER_TITLE:
+                video["title"] = fetched_title
+                db.execute("UPDATE videos SET title=? WHERE id=?", (fetched_title, video_id))
+        db.execute("UPDATE videos SET status='processing', error=NULL WHERE id=?", (video_id,))
         results = clipper.make_clips(
             src, out_dir, clip_len=video["clip_len"],
             max_clips=video["max_clips"], mode=video["mode"],
@@ -119,15 +126,16 @@ def _process(video_id: int, src: str) -> None:
     except Exception as exc:  # show the reason in the dashboard
         db.execute("UPDATE videos SET status='failed', error=? WHERE id=?", (str(exc)[:500], video_id))
     finally:
-        if not KEEP_SOURCE and os.path.exists(src):
-            os.remove(src)
+        if not is_url or not src.startswith("http"):  # src is a local file here
+            if not KEEP_SOURCE and os.path.exists(src):
+                os.remove(src)
 
 
 def _worker() -> None:
     while True:
-        video_id, src = jobs.get()
+        video_id, src, is_url = jobs.get()
         try:
-            _process(video_id, src)
+            _process(video_id, src, is_url)
         finally:
             jobs.task_done()
 
@@ -139,7 +147,7 @@ def _startup() -> None:
     # Anything still "processing" was cut off by a restart (common on free hosting).
     db.execute(
         "UPDATE videos SET status='failed', error='Server restarted while processing - upload again' "
-        "WHERE status IN ('queued','processing')"
+        "WHERE status IN ('queued','downloading','processing')"
     )
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -154,26 +162,46 @@ def index(request: Request, _: None = Depends(require_login)):
         "FROM videos v ORDER BY v.id DESC"
     )
     return templates.TemplateResponse(
-        request, "index.html", {"videos": videos, "max_mb": MAX_UPLOAD_MB}
+        request, "index.html", {"videos": videos, "max_mb": MAX_UPLOAD_MB, "max_min": download.MAX_MINUTES}
     )
 
 
 @app.post("/upload")
 async def upload(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    url: str = Form(""),
+    confirm_rights: Optional[str] = Form(None),
     title: str = Form(""),
     clip_len: int = Form(30),
     max_clips: int = Form(5),
     mode: str = Form("fit"),
     _: None = Depends(require_login),
 ):
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if not re.fullmatch(r"\.(mp4|mov|mkv|webm|avi|m4v)", ext):
-        raise HTTPException(400, "Please upload an mp4, mov, mkv, webm, avi or m4v video.")
+    if not confirm_rights:
+        raise HTTPException(400, "Please confirm you own this video or have the owner's permission.")
+    url = url.strip()
+    has_file = file is not None and bool(file.filename)
+    if has_file == bool(url):
+        raise HTTPException(400, "Give either a video link or a video file (not both, not neither).")
     clip_len = max(10, min(clip_len, 59))
     max_clips = max(1, min(max_clips, 10))
     if mode not in ("fit", "crop"):
         mode = "fit"
+
+    if url:
+        if download.classify(url) is None:
+            raise HTTPException(400, "That doesn't look like a valid web link.")
+        video_id = db.execute(
+            "INSERT INTO videos (title, status, clip_len, max_clips, mode) VALUES (?,?,?,?,?)",
+            (title.strip()[:80] or PLACEHOLDER_TITLE, "queued", clip_len, max_clips, mode),
+        )
+        jobs.put((video_id, url, True))
+        return RedirectResponse(f"/video/{video_id}", status_code=303)
+
+    assert file is not None
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if not re.fullmatch(r"\.(mp4|mov|mkv|webm|avi|m4v)", ext):
+        raise HTTPException(400, "Please upload an mp4, mov, mkv, webm, avi or m4v video.")
     name = (title.strip() or os.path.splitext(file.filename or "video")[0])[:80]
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -196,7 +224,7 @@ async def upload(
         "INSERT INTO videos (title, status, clip_len, max_clips, mode) VALUES (?,?,?,?,?)",
         (name, "queued", clip_len, max_clips, mode),
     )
-    jobs.put((video_id, src))
+    jobs.put((video_id, src, False))
     return RedirectResponse(f"/video/{video_id}", status_code=303)
 
 

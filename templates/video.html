@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block head %}{% if video.status in ('queued','processing') %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block head %}{% if video.status in ('queued','downloading','processing') %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 <p><a href="/">&larr; All videos</a></p>
 <h1>{{ video.title }} <span class="pill {{ video.status }}">{{ video.status }}</span></h1>
 
-{% if video.status in ('queued','processing') %}
-<p class="card">Finding the best moments and cutting Shorts. This page refreshes by itself.</p>
+{% if video.status in ('queued','downloading','processing') %}
+<p class="card">{% if video.status == 'downloading' %}Downloading the video from your link...{% else %}Finding the best moments and cutting Shorts...{% endif %} This page refreshes by itself.</p>
 {% elif video.status == 'failed' %}
 <p class="card err">Failed: {{ video.error }}</p>
 {% endif %}

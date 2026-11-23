@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% block head %}{% if videos and videos[0].status in ('queued','processing') %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block head %}{% if videos and videos[0].status in ('queued','downloading','processing') %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
 {% block content %}
 <h1>New video</h1>
 <form class="card" method="post" action="/upload" enctype="multipart/form-data">
-  <label for="file">Video file (max {{ max_mb }} MB)</label>
-  <input id="file" name="file" type="file" accept="video/*" required>
+  <label for="url">Paste a video link (Google Drive, Dropbox, direct .mp4 link)</label>
+  <input id="url" name="url" type="text" inputmode="url" placeholder="https://drive.google.com/file/d/.../view">
+  <label for="file">...or upload a video file (max {{ max_mb }} MB)</label>
+  <input id="file" name="file" type="file" accept="video/*">
   <label for="title">Title (optional)</label>
   <input id="title" name="title" type="text" maxlength="80" placeholder="e.g. Ranked match, Valorant">
   <div class="grid">
@@ -13,7 +15,10 @@
     <div><label for="mode">Layout</label>
       <select id="mode" name="mode"><option value="fit">Full screen + blur</option><option value="crop">Center crop</option></select></div>
   </div>
-  <p class="muted">Only upload videos you own or have written permission to use.</p>
+  <p><label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)">
+    <input type="checkbox" name="confirm_rights" value="1" required style="margin-top:5px">
+    <span>I own this video or have the owner's permission to use it.</span></label></p>
+  <p class="muted">Drive/Dropbox links must be shared as "Anyone with the link". YouTube links are tried too, but YouTube often blocks servers - if that happens, share the original file by Drive instead.</p>
   <p><button class="primary" type="submit">Find best clips</button></p>
 </form>
 
